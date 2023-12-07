@@ -1,3 +1,5 @@
+import org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension
+
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.androidLibrary)
@@ -33,22 +35,7 @@ kotlin {
         }
     }
 
-    val publicationsFromMainHost = listOf(
-        iosX64(),
-        iosArm64(),
-        iosSimulatorArm64(),
-        androidTarget()
-    ).map { it.name } + "kotlinMultiplatform"
-    publishing {
-        publications {
-            matching { it.name in publicationsFromMainHost }.all {
-                val targetPublication = this@all
-                tasks.withType<AbstractPublishToMaven>()
-                    .matching { it.publication == targetPublication }
-                    .configureEach { onlyIf { findProperty("isMainHost") == "true" } }
-            }
-        }
-    }
+    publishing()
 }
 
 android {
@@ -61,4 +48,37 @@ android {
 }
 dependencies {
     implementation(libs.androidx.core.ktx)
+}
+
+
+fun KotlinMultiplatformExtension.publishing() {
+    val publicationsFromMainHost = listOf(
+        iosX64(),
+        iosArm64(),
+        iosSimulatorArm64(),
+        androidTarget()
+    ).map { it.name } + "kotlinMultiplatform"
+
+
+    publishing {
+        publications {
+            matching { it.name in publicationsFromMainHost }.all {
+                val targetPublication = this@all
+                tasks.withType<AbstractPublishToMaven>()
+                    .matching { it.publication == targetPublication }
+                    .configureEach { onlyIf { findProperty("isMainHost") == "true" } }
+            }
+        }
+
+        repositories {
+            maven {
+                name = "KDownloader"
+                url = uri("https://maven.pkg.github.com/OneXeor/KDownloader")
+                credentials {
+                    username = System.getenv("GITHUB_USER")
+                    password = System.getenv("GITHUB_API_KEY")
+                }
+            }
+        }
+    }
 }
