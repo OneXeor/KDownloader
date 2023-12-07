@@ -15,6 +15,9 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Gradlew - Build & Publish
+        env:
+          USERNAME: ${{ secrets.USERNAME }}
+          API_KEY: ${{ secrets.API_KEY }}
         run: |
           ./gradlew build
           ./gradlew publish
