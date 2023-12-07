@@ -23,7 +23,10 @@ import kotlin.properties.Delegates
 
 actual class KDownloader {
 
-    private var context: Context by Delegates.notNull()
+    /**
+     * Needs to be set at the Android side, preferably in the `onCreate` method of the Application class
+     */
+    var context: Context by Delegates.notNull()
     private val downloadService by lazy { context.getSystemService(DownloadManager::class.java) }
     private var handler: Handler
     private var statusHandler: Handler = Handler(Looper.getMainLooper())
@@ -33,15 +36,6 @@ actual class KDownloader {
             start()
             handler = Handler(looper)
         }
-    }
-
-    /**
-     * Needs to be invoked at the Android side, preferably in the `onCreate` method of the Application class
-     *
-     * @param context
-     */
-    fun setContext(context: Context) {
-        this.context = context
     }
 
     actual fun cancelDownloadById(downloadId: Long) {

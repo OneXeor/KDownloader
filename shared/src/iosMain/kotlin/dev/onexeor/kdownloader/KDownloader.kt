@@ -2,6 +2,7 @@
 
 package dev.onexeor.kdownloader
 
+import kotlin.system.getTimeMillis
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.ObjCObjectVar
 import kotlinx.cinterop.alloc
@@ -19,7 +20,6 @@ import platform.Foundation.NSURLSessionDownloadTask
 import platform.Foundation.NSUserDomainMask
 import platform.Foundation.downloadTaskWithURL
 import platform.Foundation.lastPathComponent
-import kotlin.system.getTimeMillis
 
 actual class KDownloader {
 
@@ -85,7 +85,11 @@ actual class KDownloader {
                 val pointer = alloc<ObjCObjectVar<NSError?>>()
 
                 try {
-                    fileManager.moveItemAtURL(url, NSURL(writablePath), pointer.ptr)
+                    fileManager.moveItemAtURL(
+                        srcURL = url,
+                        toURL = NSURL(string = writablePath),
+                        error = pointer.ptr
+                    )
                     progressListener?.invoke(url.toString(), 1)
                 } catch (e: Exception) {
                     e.printStackTrace()
@@ -96,7 +100,10 @@ actual class KDownloader {
             }
         }
 
-        val downloadTask = NSURLSession.sharedSession.downloadTaskWithURL(NSURL(url), ::complete)
+        val downloadTask = NSURLSession.sharedSession.downloadTaskWithURL(
+            url = NSURL(string = url),
+            completionHandler = ::complete
+        )
         val id = getTimeMillis()
         tasks[id] = downloadTask
 
