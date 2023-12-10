@@ -75,8 +75,8 @@ fun KotlinMultiplatformExtension.publishing() {
                 name = "KDownloader"
                 url = uri("https://maven.pkg.github.com/OneXeor/KDownloader")
                 credentials {
-                    username = System.getenv("GITHUB_USER")
-                    password = System.getenv("GITHUB_API_KEY")
+                    username = System.getenv("USERNAME")
+                    password = System.getenv("API_KEY")
                 }
             }
         }
