@@ -19,5 +19,5 @@ jobs:
           USERNAME: ${{ secrets.USERNAME }}
           API_KEY: ${{ secrets.API_KEY }}
         run: |
-          ./gradlew build
-          ./gradlew publish
+          ./gradlew build --no-daemon
+          ./gradlew publish --no-daemon
