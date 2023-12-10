@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build & Publish
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v3
+      - name: Gradlew - Build & Publish
+        env:
+          USERNAME: ${{ secrets.USERNAME }}
+          API_KEY: ${{ secrets.API_KEY }}
+        run: |
+          ./gradlew build
+          ./gradlew publish
