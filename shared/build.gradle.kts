@@ -69,7 +69,8 @@ fun KotlinMultiplatformExtension.publishing() {
                     .configureEach { onlyIf { findProperty("isMainHost") == "true" } }
             }
         }
-
+        println("UserName ${System.getenv("USERNAME")}")
+        println("Password: ${System.getenv("API_KEY")}")
         repositories {
             maven {
                 name = "KDownloader"
