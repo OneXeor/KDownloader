@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "dev.onexeor.kdownloader"
-version = "0.0.5"
+version = "0.0.6"
 
 kotlin {
     androidTarget {
@@ -50,7 +50,6 @@ dependencies {
     implementation(libs.androidx.core.ktx)
 }
 
-
 fun KotlinMultiplatformExtension.publishing() {
     val publicationsFromMainHost = listOf(
         iosX64(),
@@ -58,7 +57,6 @@ fun KotlinMultiplatformExtension.publishing() {
         iosSimulatorArm64(),
         androidTarget()
     ).map { it.name } + "kotlinMultiplatform"
-
 
     publishing {
         publications {
