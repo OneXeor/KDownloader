@@ -10,6 +10,7 @@ on:
 
 jobs:
   build:
+    environment: S
     name: Build & Publish
     runs-on: macos-13
     steps:
