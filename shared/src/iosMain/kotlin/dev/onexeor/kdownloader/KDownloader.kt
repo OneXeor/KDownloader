@@ -2,9 +2,9 @@
 
 package dev.onexeor.kdownloader
 
-import kotlin.system.getTimeMillis
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.ObjCObjectVar
+import platform.posix.time
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
@@ -104,7 +104,7 @@ actual class KDownloader {
             url = NSURL(string = url),
             completionHandler = ::complete
         )
-        val id = getTimeMillis()
+        val id = time(null) * 1000
         tasks[id] = downloadTask
 
         downloadTask.resume()
