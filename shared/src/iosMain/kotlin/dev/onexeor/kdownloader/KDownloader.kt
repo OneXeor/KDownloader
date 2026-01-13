@@ -2,113 +2,66 @@
 
 package dev.onexeor.kdownloader
 
+import dev.onexeor.kdownloader.internal.IosDownloadTask
 import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.ObjCObjectVar
-import platform.posix.time
-import kotlinx.cinterop.alloc
-import kotlinx.cinterop.memScoped
-import kotlinx.cinterop.ptr
-import platform.Foundation.NSDocumentDirectory
-import platform.Foundation.NSError
-import platform.Foundation.NSFileManager
-import platform.Foundation.NSHTTPURLResponse
-import platform.Foundation.NSSearchPathForDirectoriesInDomains
-import platform.Foundation.NSURL
-import platform.Foundation.NSURLResponse
-import platform.Foundation.NSURLSession
-import platform.Foundation.NSURLSessionDownloadTask
-import platform.Foundation.NSUserDomainMask
-import platform.Foundation.downloadTaskWithURL
-import platform.Foundation.lastPathComponent
+import platform.Foundation.NSUUID
 
-actual class KDownloader {
+/**
+ * iOS implementation of KDownloader using NSURLSession.
+ */
+actual class KDownloader actual constructor(
+    private val config: KDownloaderConfig
+) {
+    private val tasks = mutableMapOf<String, IosDownloadTask>()
 
-    private val tasks = mutableMapOf<Long, NSURLSessionDownloadTask>()
-
-    /**
-     *
-     */
-    actual fun cancelDownloadById(downloadId: Long) {
-        tasks[downloadId]?.cancel()
+    actual fun download(url: String, builder: DownloadRequestBuilder.() -> Unit): DownloadTask {
+        val request = DownloadRequestBuilder(url).apply(builder).build()
+        return download(request)
     }
 
-    /**
-     *
-     */
-    actual fun getMimeTypeById(downloadId: Long): String? {
-        return tasks[downloadId]?.originalRequest?.URL?.lastPathComponent
-    }
+    actual fun download(request: DownloadRequest): DownloadTask {
+        val taskId = NSUUID().UUIDString
 
-    /**
-     *
-     */
-    actual fun getUrlById(downloadId: Long): String? {
-        return tasks[downloadId]?.originalRequest?.URL.toString()
-    }
+        // Determine file name
+        val fileName = request.fileName ?: extractFileNameFromUrl(request.url)
 
-    /**
-     * @param url http or https url
-     * @param fileName if null will be [System.currentTimeMillis].txt
-     * @param progressListener can be nullable, consist of [Uri] to file and downloading status, see [android.app.DownloadManager] constants
-     *
-     * @return download id
-     */
-    actual fun downloadFile(
-        url: String,
-        fileName: String?,
-        progressListener: ((String, Int) -> Unit)?,
-        errorListener: ((DownloadError) -> Unit)?
-    ): Long {
-        fun complete(url: NSURL?, response: NSURLResponse?, error: NSError?) {
-            val httpResponse = response as? NSHTTPURLResponse
-            val httpStatusCode = httpResponse?.statusCode?.toInt() ?: -1
-            if (error != null) {
-                errorListener?.invoke(
-                    DownloadError(url.toString(), -1, "Error while downloading", httpStatusCode)
-                )
-                return
-            }
+        // Determine directory
+        val directory = request.directory ?: config.defaultDirectory
 
-            if (url == null) {
-                errorListener?.invoke(DownloadError("NULL", -1, "URL is null", httpStatusCode))
-                return
-            }
-
-            val documentsDirectory = NSSearchPathForDirectoriesInDomains(
-                NSDocumentDirectory,
-                NSUserDomainMask,
-                true
-            ).first()
-            val fileManager = NSFileManager.defaultManager
-            val writablePath = "$documentsDirectory/$fileName"
-            memScoped {
-                val pointer = alloc<ObjCObjectVar<NSError?>>()
-
-                try {
-                    fileManager.moveItemAtURL(
-                        srcURL = url,
-                        toURL = NSURL(string = writablePath),
-                        error = pointer.ptr
-                    )
-                    progressListener?.invoke(url.toString(), 1)
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    errorListener?.invoke(
-                        DownloadError(url.toString(), -1, "Error while file saving", httpStatusCode)
-                    )
-                }
-            }
-        }
-
-        val downloadTask = NSURLSession.sharedSession.downloadTaskWithURL(
-            url = NSURL(string = url),
-            completionHandler = ::complete
+        // Create task
+        val task = IosDownloadTask(
+            id = taskId,
+            request = request,
+            fileName = fileName,
+            directory = directory,
+            initialListeners = request.listeners
         )
-        val id = time(null) * 1000
-        tasks[id] = downloadTask
 
-        downloadTask.resume()
+        tasks[taskId] = task
 
-        return id
+        // Start download
+        task.start()
+
+        return task
+    }
+
+    actual fun getTask(id: String): DownloadTask? = tasks[id]
+
+    actual fun cancelAll() {
+        tasks.values.forEach { it.cancel() }
+        tasks.clear()
+    }
+
+    private fun extractFileNameFromUrl(url: String): String {
+        return try {
+            val lastSegment = url.substringAfterLast("/")
+            if (lastSegment.isNotBlank() && lastSegment.contains(".")) {
+                lastSegment.substringBefore("?")
+            } else {
+                "${NSUUID().UUIDString}.bin"
+            }
+        } catch (e: Exception) {
+            "${NSUUID().UUIDString}.bin"
+        }
     }
 }

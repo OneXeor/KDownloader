@@ -1,231 +1,171 @@
 package dev.onexeor.kdownloader
 
+import android.annotation.SuppressLint
 import android.app.DownloadManager
 import android.content.Context
-import android.database.Cursor
 import android.net.Uri
-import android.os.Build
-import android.os.Environment
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
-import android.os.ParcelFileDescriptor
 import android.util.Base64
-import android.util.Log
 import android.webkit.MimeTypeMap
-import androidx.core.database.getIntOrNull
-import androidx.core.database.getStringOrNull
-import dev.onexeor.kdownloader.auth.Auth
-import dev.onexeor.kdownloader.extension.getFilePath
-import dev.onexeor.kdownloader.extension.getFilePath29Api
-import dev.onexeor.kdownloader.extension.isExternalStorageWritable
-import kotlin.properties.Delegates
+import dev.onexeor.kdownloader.internal.AndroidDownloadTask
+import dev.onexeor.kdownloader.internal.getDownloadDirectory
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
-actual class KDownloader {
-
-    /**
-     * Needs to be set at the Android side, preferably in the `onCreate` method of the Application class
-     */
-    var context: Context by Delegates.notNull()
-    private val downloadService by lazy { context.getSystemService(DownloadManager::class.java) }
-    private var handler: Handler
-    private var statusHandler: Handler = Handler(Looper.getMainLooper())
-
-    init {
-        HandlerThread(this::class.java.canonicalName).apply {
-            start()
-            handler = Handler(looper)
-        }
+/**
+ * Android implementation of KDownloader using system DownloadManager.
+ *
+ * Note: Context must be initialized before use via [KDownloader.init].
+ */
+actual class KDownloader actual constructor(
+    private val config: KDownloaderConfig
+) {
+    private val downloadManager: DownloadManager by lazy {
+        appContext.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
     }
 
-    actual fun cancelDownloadById(downloadId: Long) {
-        downloadService.remove(downloadId)
+    private val tasks = ConcurrentHashMap<String, AndroidDownloadTask>()
+    private val workerThread = HandlerThread("KDownloader-Worker").apply { start() }
+    private val workerHandler = Handler(workerThread.looper)
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    actual fun download(url: String, builder: DownloadRequestBuilder.() -> Unit): DownloadTask {
+        val request = DownloadRequestBuilder(url).apply(builder).build()
+        return download(request)
     }
 
-    actual fun getMimeTypeById(downloadId: Long): String? {
-        return downloadService.getMimeTypeForDownloadedFile(downloadId)
-    }
+    actual fun download(request: DownloadRequest): DownloadTask {
+        val taskId = UUID.randomUUID().toString()
 
-    actual fun getUrlById(downloadId: Long): String? {
-        return downloadService.getUriForDownloadedFile(downloadId)?.toString()
-    }
+        // Determine file name
+        val fileName = request.fileName ?: extractFileNameFromUrl(request.url)
 
-    fun openDownloadById(downloadId: Long): ParcelFileDescriptor? {
-        return downloadService.openDownloadedFile(downloadId)
-    }
+        // Determine directory
+        val directory = request.directory ?: config.defaultDirectory
 
-    actual fun downloadFile(
-        url: String,
-        fileName: String?,
-        progressListener: ((String, Int) -> Unit)?,
-        errorListener: ((DownloadError) -> Unit)?
-    ): Long {
-        val defaultAuth = Auth.BasicAuth("", "")
+        // Get download URI
+        val downloadUri = getDownloadDirectory(appContext, directory, fileName)
+            ?: throw IllegalStateException("Could not create download directory")
 
-        val extOut = when {
-            fileName != null -> fileName.substringAfterLast(".", "")
-            else -> ".txt"
-        }
-        val mimeTypeOut = when {
-            else -> MimeTypeMap.getSingleton().getMimeTypeFromExtension(extOut) ?: DEFAULT_MIME_TYPE
-        }
+        // Build DownloadManager request
+        val dmRequest = DownloadManager.Request(Uri.parse(request.url)).apply {
+            setTitle(fileName)
+            setDescription("Downloading $fileName")
+            setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            setDestinationUri(downloadUri)
 
-        return startDownloadManager(
-            url = url,
-            fileName = fileName ?: "${System.currentTimeMillis()}.txt",
-            auth = defaultAuth,
-            mimeType = mimeTypeOut,
-            progressListener = progressListener,
-            errorListener = errorListener
-        )
-    }
-
-    private fun startDownloadManager(
-        url: String,
-        downloadDialogTitle: String? = null,
-        downloadDialogDescription: String? = null,
-        fileName: String,
-        normalizedCookies: String? = null,
-        mimeType: String,
-        auth: Auth = Auth.BasicAuth("", ""),
-        downloadDeclineListener: (() -> Unit)? = null,
-        progressListener: ((String, Int) -> Unit)? = null,
-        errorListener: ((DownloadError) -> Unit)? = null
-    ): Long {
-        val headerCredentials = when (auth) {
-            is Auth.BasicAuth -> "Basic " + Base64.encodeToString(
-                "${auth.login}:${auth.password}".toByteArray(),
-                Base64.NO_WRAP
-            )
-
-            is Auth.TokenAuth -> auth.token
-        }
-
-        if (!Environment().isExternalStorageWritable()) {
-            downloadDeclineListener?.invoke()
-            return -1
-        }
-
-        val newFileName = fileName.replace(
-            Regex("[^a-zA-Z0-9À-ÿ.\\s]+"),
-            " "
-        )
-        val downloadUri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            getFilePath29Api(context, newFileName)
-        } else {
-            getFilePath(newFileName)
-        }
-
-        val request = DownloadManager.Request(Uri.parse(url))
-            .setTitle(downloadDialogTitle ?: context.getString(R.string.app_name))
-            .setAllowedNetworkTypes(
-                DownloadManager.Request.NETWORK_WIFI or DownloadManager.Request.NETWORK_MOBILE
-            )
-            .setMimeType(mimeType)
-            .addRequestHeader("Authorization", headerCredentials)
-            .addRequestHeader("Cookie", normalizedCookies)
-            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            .setDescription(
-                downloadDialogDescription ?: String.format(
-                    context.getString(R.string.download_dialog_description),
-                    fileName
+            // Set network type
+            val networkType = request.networkType ?: config.defaultNetworkType
+            when (networkType) {
+                NetworkType.ANY -> setAllowedNetworkTypes(
+                    DownloadManager.Request.NETWORK_WIFI or DownloadManager.Request.NETWORK_MOBILE
                 )
-            )
-            .setDestinationUri(downloadUri)
-
-        val dwnID = downloadService.enqueue(request)
-
-        downloadUri?.let {
-            this.getDownloadStatus(dwnID, it, progressListener, errorListener)
-        }
-        return dwnID
-    }
-
-    private fun getDownloadStatus(
-        dwnID: Long,
-        downloadUri: Uri,
-        progressListener: ((String, Int) -> Unit)?,
-        errorListener: ((DownloadError) -> Unit)? = null
-    ) {
-        handler.removeCallbacksAndMessages(null)
-        handler.post {
-            try {
-                var downloading = true
-                while (downloading) {
-                    val query = DownloadManager.Query().setFilterById(dwnID)
-                    val cursor: Cursor = downloadService.query(query)
-                    if (cursor.moveToFirst()) {
-                        val columnDescriptionIdx = cursor.getColumnIndex(
-                            DownloadManager.COLUMN_DESCRIPTION
-                        )
-                        val columnReasonIdx = cursor.getColumnIndex(DownloadManager.COLUMN_REASON)
-                        val columnStatusIdx = cursor.getColumnIndex(DownloadManager.COLUMN_STATUS)
-                        val dwnStatus = cursor.getIntOrNull(columnStatusIdx)
-                        val dwnDescription = cursor.getStringOrNull(columnDescriptionIdx)
-                        val dwnHttpStatusCode = cursor.getIntOrNull(columnReasonIdx)
-
-                        statusHandler.post {
-                            when (dwnStatus) {
-                                DownloadManager.STATUS_FAILED -> {
-                                    errorListener?.invoke(
-                                        DownloadError(
-                                            url = downloadUri.toString(),
-                                            status = dwnStatus,
-                                            description = dwnDescription.orEmpty(),
-                                            statusCode = dwnHttpStatusCode ?: -1
-                                        )
-                                    )
-                                    progressListener?.invoke(downloadUri.toString(), dwnStatus)
-                                }
-
-                                DownloadManager.STATUS_PAUSED,
-                                DownloadManager.STATUS_SUCCESSFUL,
-                                DownloadManager.STATUS_PENDING
-                                -> progressListener?.invoke(downloadUri.toString(), dwnStatus)
-                            }
-                        }
-                        if (dwnStatus == DownloadManager.STATUS_SUCCESSFUL ||
-                            dwnStatus == DownloadManager.STATUS_FAILED
-                        ) {
-                            downloading = false
-                        }
-                    }
-
-                    Log.d(
-                        KDownloader::class.simpleName,
-                        "Download status: " + statusMessage(cursor)
-                    )
-                    cursor.close()
-                }
-            } catch (e: Exception) {
-                statusHandler.post {
-                    progressListener?.invoke(
-                        downloadUri.toString(),
-                        DownloadManager.STATUS_FAILED
-                    )
-                }
-                e.printStackTrace()
-                Log.e(
-                    KDownloader::class.simpleName,
-                    "Error while downloading file: " + e.message
-                )
+                NetworkType.WIFI_ONLY -> setAllowedNetworkTypes(DownloadManager.Request.NETWORK_WIFI)
             }
+
+            // Set MIME type
+            val mimeType = getMimeType(fileName)
+            setMimeType(mimeType)
+
+            // Add headers
+            request.headers.forEach { (key, value) ->
+                addRequestHeader(key, value)
+            }
+
+            // Add auth header
+            request.auth?.let { auth ->
+                val authHeader = when (auth) {
+                    is Auth.Bearer -> "Bearer ${auth.token}"
+                    is Auth.Basic -> {
+                        val credentials = "${auth.username}:${auth.password}"
+                        "Basic ${Base64.encodeToString(credentials.toByteArray(), Base64.NO_WRAP)}"
+                    }
+                }
+                addRequestHeader("Authorization", authHeader)
+            }
+        }
+
+        // Enqueue download
+        val downloadId = downloadManager.enqueue(dmRequest)
+
+        // Create task
+        val task = AndroidDownloadTask(
+            id = taskId,
+            downloadId = downloadId,
+            request = request,
+            filePath = downloadUri.path ?: "",
+            downloadManager = downloadManager,
+            workerHandler = workerHandler,
+            mainHandler = mainHandler,
+            initialListeners = request.listeners
+        )
+
+        tasks[taskId] = task
+
+        // Start progress monitoring
+        task.startMonitoring()
+
+        return task
+    }
+
+    actual fun getTask(id: String): DownloadTask? = tasks[id]
+
+    actual fun cancelAll() {
+        tasks.values.forEach { it.cancel() }
+        tasks.clear()
+    }
+
+    private fun extractFileNameFromUrl(url: String): String {
+        return try {
+            val path = Uri.parse(url).lastPathSegment
+            if (!path.isNullOrBlank() && path.contains(".")) {
+                path
+            } else {
+                "${System.currentTimeMillis()}.bin"
+            }
+        } catch (e: Exception) {
+            "${System.currentTimeMillis()}.bin"
+        }
+    }
+
+    private fun getMimeType(fileName: String): String {
+        val extension = fileName.substringAfterLast(".", "")
+        return if (extension.isNotEmpty()) {
+            MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: DEFAULT_MIME_TYPE
+        } else {
+            DEFAULT_MIME_TYPE
         }
     }
 
     companion object {
-        private const val DEFAULT_MIME_TYPE = "application/*"
-    }
+        private const val DEFAULT_MIME_TYPE = "application/octet-stream"
 
-    private fun statusMessage(c: Cursor): String {
-        val columnStatusIdx = c.getColumnIndex(DownloadManager.COLUMN_STATUS)
-        return when (c.getInt(columnStatusIdx)) {
-            DownloadManager.STATUS_FAILED -> "Download failed!"
-            DownloadManager.STATUS_PAUSED -> "Download paused!"
-            DownloadManager.STATUS_PENDING -> "Download pending!"
-            DownloadManager.STATUS_RUNNING -> "Download in progress!"
-            DownloadManager.STATUS_SUCCESSFUL -> "Download complete!"
-            else -> "Download is nowhere in sight"
+        @SuppressLint("StaticFieldLeak")
+        private lateinit var appContext: Context
+
+        /**
+         * Initialize KDownloader with application context.
+         * Call this in Application.onCreate().
+         *
+         * ```kotlin
+         * class MyApp : Application() {
+         *     override fun onCreate() {
+         *         super.onCreate()
+         *         KDownloader.init(this)
+         *     }
+         * }
+         * ```
+         */
+        fun init(context: Context) {
+            appContext = context.applicationContext
         }
+
+        /**
+         * Check if KDownloader has been initialized.
+         */
+        val isInitialized: Boolean
+            get() = ::appContext.isInitialized
     }
 }
