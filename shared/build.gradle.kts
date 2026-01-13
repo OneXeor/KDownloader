@@ -33,6 +33,12 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
         }
+        commonTest.dependencies {
+            implementation(kotlin("test"))
+        }
+        androidUnitTest.dependencies {
+            implementation(kotlin("test-junit"))
+        }
     }
 }
 
