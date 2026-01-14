@@ -1,15 +1,14 @@
+import com.vanniktech.maven.publish.SonatypeHost
+
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.androidLibrary)
-    id("maven-publish")
+    alias(libs.plugins.mavenPublish)
 }
-
-group = "dev.onexeor"
-version = "1.0.0"
 
 kotlin {
     androidTarget {
-        publishLibraryVariants("release", "debug")
+        publishLibraryVariants("release")
         compilations.all {
             compileTaskProvider.configure {
                 compilerOptions {
@@ -58,23 +57,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
 }
 
-afterEvaluate {
-    publishing {
-        publications.withType<MavenPublication> {
-            artifactId = artifactId.replace("library", "kdownloader")
-        }
-    }
-}
-
-publishing {
-    repositories {
-        maven {
-            name = "KDownloader"
-            url = uri("https://maven.pkg.github.com/OneXeor/KDownloader")
-            credentials {
-                username = System.getenv("USERNAME")
-                password = System.getenv("API_KEY")
-            }
-        }
-    }
+mavenPublishing {
+    publishToMavenCentral(SonatypeHost.CENTRAL_PORTAL)
+    signAllPublications()
 }
