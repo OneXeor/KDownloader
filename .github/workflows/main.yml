@@ -11,7 +11,7 @@ on:
 jobs:
   build:
     name: Build
-    runs-on: macos-26
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -25,17 +25,19 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Build
-        run: ./gradlew build
+        run: ./gradlew :library:build --no-configuration-cache
 
       - name: Run Tests
-        run: ./gradlew allTests
+        run: ./gradlew :library:allTests --no-configuration-cache
 
   publish:
-    name: Publish
+    name: Publish to Maven Central
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: macos-26
-    environment: S
+    runs-on: macos-latest
+    environment: Central
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -48,8 +50,15 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Publish
+      - name: Publish to Maven Central
+        run: ./gradlew :library:publishAndReleaseToMavenCentral --no-configuration-cache
         env:
-          USERNAME: ${{ secrets.USERNAME }}
-          API_KEY: ${{ secrets.API_KEY }}
-        run: ./gradlew publish
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.SIGNING_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.SIGNING_PASSWORD }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
