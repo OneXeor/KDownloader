@@ -40,7 +40,7 @@ dependencyResolutionManagement {
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("dev.onexeor.kdownloader:shared:0.2.0")
+            implementation("dev.onexeor:kdownloader:1.0.0")
         }
     }
 }

@@ -4,8 +4,8 @@ plugins {
     id("maven-publish")
 }
 
-group = "dev.onexeor.kdownloader"
-version = "0.2.0"
+group = "dev.onexeor"
+version = "1.0.0"
 
 kotlin {
     androidTarget {
@@ -43,7 +43,7 @@ kotlin {
 }
 
 android {
-    namespace = group.toString()
+    namespace = "dev.onexeor.kdownloader"
     compileSdk = 35
     defaultConfig {
         minSdk = 24
@@ -56,6 +56,14 @@ android {
 
 dependencies {
     implementation(libs.androidx.core.ktx)
+}
+
+afterEvaluate {
+    publishing {
+        publications.withType<MavenPublication> {
+            artifactId = artifactId.replace("library", "kdownloader")
+        }
+    }
 }
 
 publishing {
