@@ -15,6 +15,7 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "KDownloader"
-include(":shared")
+include(":library")
+project(":library").projectDir = file("lib")
 include(":example:androidApp")
 include(":example:shared")
