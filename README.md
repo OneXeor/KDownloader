@@ -1,5 +1,6 @@
 # KDownloader
 
+[![Maven Central](https://img.shields.io/maven-central/v/dev.onexeor/kdownloader)](https://central.sonatype.com/artifact/dev.onexeor/kdownloader)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.3.0-purple.svg)](https://kotlinlang.org)
 [![Platform](https://img.shields.io/badge/Platform-Android%20%7C%20iOS-green.svg)](https://kotlinlang.org/docs/multiplatform.html)
@@ -20,23 +21,10 @@ A lightweight Kotlin Multiplatform download manager for Android and iOS. Uses pl
 
 ## Installation
 
-Add the GitHub Packages repository and dependency to your project:
+Add the dependency to your KMP module:
 
 ```kotlin
-// settings.gradle.kts
-dependencyResolutionManagement {
-    repositories {
-        maven {
-            url = uri("https://maven.pkg.github.com/OneXeor/KDownloader")
-            credentials {
-                username = providers.gradleProperty("gpr.user").orNull ?: System.getenv("USERNAME")
-                password = providers.gradleProperty("gpr.token").orNull ?: System.getenv("API_KEY")
-            }
-        }
-    }
-}
-
-// build.gradle.kts (shared module)
+// build.gradle.kts
 kotlin {
     sourceSets {
         commonMain.dependencies {
